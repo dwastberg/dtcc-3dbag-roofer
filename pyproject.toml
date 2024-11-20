@@ -1,0 +1,9 @@
+[project]
+name = "dtcc-3dbag-roofer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+ "dtcc-core@git+https://github.com/dtcc-platform/dtcc-core.git@develop"
+]
