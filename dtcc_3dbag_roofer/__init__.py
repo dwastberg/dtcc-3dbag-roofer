@@ -2,6 +2,7 @@ from dtcc_core.model import Building, Mesh, Surface, GeometryType
 from dtcc_core.common.dtcc_logging import init_logging
 import numpy as np
 
+
 debug, info, warning, error, critical = init_logging("dtcc-3dbag-roofer")
 
 from . import roofer
@@ -72,9 +73,9 @@ def building_roofer(
         )
         reconstruct_LOD = GeometryType.LOD2
     except RuntimeError as e:
-        roofer_config.lod = 12
+        roofer_config.lod = 13
         roofer_config.complexity_factor = 0.5
-        roofer_config.plane_detect_min_points = plane_detect_k // 2
+        roofer_config.plane_detect_min_points = max(plane_detect_k // 2,3)
         try:
             roofer_meshes = roofer.reconstruct(
                 roof_points, [], footprint_rings, roofer_config
