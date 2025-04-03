@@ -5,10 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "dtcc-core@git+https://github.com/dtcc-platform/dtcc-core.git@develop",
+    "dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@develop",
     "numpy>=2.1.3",
 ]
 
 [build-system]
 requires = ["scikit-build-core", "pybind11==2.13.*", "wheel"]
 build-backend = "scikit_build_core.build"
+
+[tool.uv]
+dev-dependencies = [
+    "dtcc-viewer @ git+https://github.com/dtcc-platform/dtcc-viewer.git@develop",
+    "pytest>=8.3.4",
+]

@@ -10,7 +10,7 @@ from . import roofer
 
 def _coords_to_ring(coords, x_offset=0, y_offset=0):
     return [
-        [float(coord[0]) + x_offset, float(coord[1]) + y_offset, 0.0]
+        [float(float(coord[0]) + x_offset), float(float(coord[1]) + y_offset), 0.0]
         for coord in coords
     ]
 
@@ -20,10 +20,11 @@ def _polygon_to_rings(geom, x_offset=0, y_offset=0):
     exterior_ring = _coords_to_ring(geom.exterior.coords, x_offset, y_offset)
 
     # Extract interior rings (if any)
-    interior_rings = [
-        _coords_to_ring(interior.coords, x_offset, y_offset)
-        for interior in geom.interiors
-    ]
+    interior_rings = []
+    # interior_rings = [
+    #     _coords_to_ring(interior.coords, x_offset, y_offset)
+    #     for interior in geom.interiors
+    # ]
 
     # Combine exterior and interior rings into a single list
     all_rings = [exterior_ring] + interior_rings
@@ -38,11 +39,12 @@ def building_roofer(
     default_ground_height=0,
 ) -> Building:
     roof_points = building.point_cloud
+    footprint = building.get_footprint().to_polygon()
     if roof_points is None or len(roof_points) < plane_detect_k // 2:
         warning("insufficient roofpoints found in building, skipping roofer")
         return building, None
     ground_height = building.attributes.get("ground_height", default_ground_height)
-    footprint = building.get_footprint().to_polygon()
+
     if footprint is None:
         warning("no footprint found in building, skipping roofer")
         return building, None
@@ -64,9 +66,9 @@ def building_roofer(
     roof_points += offset
     roofer_config.floor_elevation = 0
     roofer_config.override_with_floor_elevation = True
-
+    # print(f"roof_points: {roof_points[:10]}")
     footprint_rings = _polygon_to_rings(footprint, x_offset, y_offset)
-
+    # print(f"footprint_rings: {footprint_rings}")
     try:
         roofer_meshes = roofer.reconstruct(
             roof_points, [], footprint_rings, roofer_config
@@ -75,7 +77,7 @@ def building_roofer(
     except RuntimeError as e:
         roofer_config.lod = 13
         roofer_config.complexity_factor = 0.5
-        roofer_config.plane_detect_min_points = max(plane_detect_k // 2,3)
+        roofer_config.plane_detect_min_points = max(plane_detect_k // 2, 3)
         try:
             roofer_meshes = roofer.reconstruct(
                 roof_points, [], footprint_rings, roofer_config
