@@ -1,5 +1,7 @@
-from dtcc_core.model import Building, Mesh, Surface, GeometryType
+from dtcc_core.model import Building, Mesh, Surface, GeometryType, City, PointCloud
 from dtcc_core.common.dtcc_logging import init_logging
+
+from dtcc_core.builder import extrude_building
 import numpy as np
 
 
@@ -31,39 +33,88 @@ def _polygon_to_rings(geom, x_offset=0, y_offset=0):
 
     return all_rings
 
+def build_lod2_building(building: Building,
+                        complexity: float = 0.7,
+                        plane_detect_k: int = 15,
+                        default_ground_height=0,
+                        lod1_if_fail=True) -> Building:
+
+    roof_points = building.point_cloud
+    if roof_points is None or len(roof_points) < 1:
+        warning("No roof points found in building. Have you extracted the roof points?")
+        return building
+
+    building_geometry =building.lod0
+    if building_geometry is None:
+        building_geometry = building.lod1
+    if building_geometry is None:
+        warning("No building LOD0 or LOD1 building geometry found. Have you extracted the building geometry?")
+        return building
+    footprint = building_geometry.to_polygon()
+    if footprint is None or footprint.is_empty or footprint.area == 0 or footprint.geom_type != "Polygon":
+        warning("Could not create footprint, make sure geometry is valid")
+        return building
+
+    ground_height = building.attributes.get("ground_height", default_ground_height)
+    roofer_geom, reconstruct_lod = building_roofer(
+        roof_points,
+        footprint,
+        ground_height=ground_height,
+        complexity=complexity,
+        plane_detect_k=plane_detect_k,
+        lod1_if_fail=lod1_if_fail,
+    )
+
+    if roofer_geom is None and not lod1_if_fail:
+        warning("Could not create roof geometry. Building is unaltered")
+        return building
+    if roofer_geom is None and lod1_if_fail:
+        return building
+        # roofer_geom = extrude_building(
+        #     building,default_ground_height
+        # )
+        # reconstruct_lod = GeometryType.LOD1
+
+    building.add_geometry(roofer_geom, reconstruct_lod)
+    return building
+
+
+
 
 def building_roofer(
-    building: Building,
+    roof_points: PointCloud,
+    footprint,
+    ground_height: float = 0,
+
     complexity: float = 0.7,
     plane_detect_k: int = 15,
-    default_ground_height=0,
-) -> Building:
-    roof_points = building.point_cloud
-    footprint = building.get_footprint().to_polygon()
+    lod1_if_fail: bool = False,
+    return_mesh = False,
+) -> (Building, GeometryType):
+
     if roof_points is None or len(roof_points) < plane_detect_k // 2:
         warning("insufficient roofpoints found in building, skipping roofer")
-        return building, None
-    ground_height = building.attributes.get("ground_height", default_ground_height)
+        return None, None
 
     if footprint is None:
         warning("no footprint found in building, skipping roofer")
-        return building, None
+        return None, None
     if footprint.geom_type != "Polygon":
         warning("footprint is not a polygon, skipping roofer")
-        return building, None
+        return None, None
     roofer_config = roofer.ReconstructionConfig()
     roofer_config.complexity_factor = complexity
     roofer_config.plane_detect_k = plane_detect_k
     roofer_config.plane_detect_min_points = plane_detect_k
 
-    roof_points = roof_points.points
-    x_offset = -np.min(roof_points[:, 0])
-    y_offset = -np.min(roof_points[:, 1])
+    pts = roof_points.points
+    x_offset = -np.min(pts[:, 0])
+    y_offset = -np.min(pts[:, 1])
     z_offset = -ground_height
 
     offset = np.array([x_offset, y_offset, z_offset])
 
-    roof_points += offset
+    pts += offset
     roofer_config.floor_elevation = 0
     roofer_config.override_with_floor_elevation = True
     # print(f"roof_points: {roof_points[:10]}")
@@ -71,25 +122,33 @@ def building_roofer(
     # print(f"footprint_rings: {footprint_rings}")
     try:
         roofer_meshes = roofer.reconstruct(
-            roof_points, [], footprint_rings, roofer_config
+            pts, [], footprint_rings, roofer_config
         )
         reconstruct_LOD = GeometryType.LOD2
     except RuntimeError as e:
-        roofer_config.lod = 13
-        roofer_config.complexity_factor = 0.5
-        roofer_config.plane_detect_min_points = max(plane_detect_k // 2, 3)
-        try:
-            roofer_meshes = roofer.reconstruct(
-                roof_points, [], footprint_rings, roofer_config
-            )
-            reconstruct_LOD = GeometryType.LOD1
-        except:
-            # warning(f"Failed to reconstruct building: skipping building")
-            return building, None
-        warning("Building reconstructed with LOD1")
+        if lod1_if_fail:
+            roofer_config.lod = 13
+            roofer_config.complexity_factor = 0.5
+            roofer_config.plane_detect_min_points = max(plane_detect_k // 2, 3)
+            try:
+                roofer_meshes = roofer.reconstruct(
+                    pts, [], footprint_rings, roofer_config
+                )
+                reconstruct_LOD = GeometryType.LOD1
+            except:
+                warning(f"Failed to reconstruct building: skipping building")
+                return None, None
+            warning("Building reconstructed with LOD1")
     vertices, faces = roofer.triangulate_mesh(roofer_meshes[0])
 
     mesh = Mesh(vertices=np.array(vertices), faces=np.array(faces))
     mesh.offset(-offset)
-    building.add_geometry(mesh.to_multisurface(), reconstruct_LOD)
-    return building, reconstruct_LOD
+    pts -= offset
+    if return_mesh:
+        return mesh, reconstruct_LOD
+    else:
+        return mesh.to_multisurface(), reconstruct_LOD
+
+
+
+
