@@ -2,6 +2,8 @@ from dtcc_core import io, builder, model
 from dtcc_core.model import PointCloud
 
 from dtcc_3dbag_roofer import build_lod2_building
+from dtcc_core.builder import build_lod1_buildings
+
 from pathlib import Path
 import numpy as np
 import sys
@@ -85,14 +87,15 @@ roof_points = PointCloud()
 
 for b in buildings:
     cstart = time.time()
-    build_lod2_building(b, complexity=0.8, plane_detect_k=12)
+    succ = build_lod2_building(b, complexity=0.8, plane_detect_k=12)
+    if not succ:
+        fail_cnt += 1
+        build_lod1_buildings([b])
+        continue
+
     constuct_time.append(time.time() - cstart)
 
-for b in buildings:
-    if b.lod2 is not None:
-        print("has lod2")
-
-
+print(f"Failure count: {fail_cnt}/ {len(buildings)}")
 
 print("Average construction time: ", np.mean(constuct_time))
 print("Median construction time: ", np.median(constuct_time))
